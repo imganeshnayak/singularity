@@ -3,7 +3,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from contextlib import asynccontextmanager
 
 from .models import load_models
-from .routers import forecast, map_data, routes, explain, alerts
+from .routers import forecast, map_data, routes, explain, alerts, briefing
 
 
 @asynccontextmanager
@@ -39,6 +39,7 @@ app.include_router(map_data.router)
 app.include_router(routes.router)
 app.include_router(explain.router)
 app.include_router(alerts.router)
+app.include_router(briefing.router)
 
 
 @app.get("/api/health")

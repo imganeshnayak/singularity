@@ -96,3 +96,6 @@ class ExplainResponse(BaseModel):
     risk_level: str
     top_factors: List[FactorContribution]
     summary: str
+    ai_explanation: Optional[str] = None
+    ai_action: Optional[str] = None
+    ai_model: Optional[str] = "gemma3:4b (Ollama)"

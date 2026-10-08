@@ -1538,3 +1538,713 @@ body {
   opacity: 0.65;
   cursor: not-allowed;
 }
+
+/* =========================================================================
+   FEATURE 1: 4D TEMPORAL INUNDATION SCRUBBER & FLOOD CLOCK
+   ========================================================================= */
+.temporal-scrubber-hud {
+  position: absolute;
+  bottom: 20px;
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 1000;
+  width: min(92%, 780px);
+  background: rgba(15, 23, 42, 0.94);
+  backdrop-filter: blur(12px);
+  border: 1px solid rgba(255, 255, 255, 0.15);
+  box-shadow: 0 16px 36px rgba(0, 0, 0, 0.4), 0 0 20px rgba(13, 148, 136, 0.2);
+  border-radius: 12px;
+  padding: 12px 18px;
+  color: #f8fafc;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.scrubber-top-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+
+.scrubber-clock-group {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.scrubber-live-indicator {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  background: rgba(255, 255, 255, 0.08);
+  padding: 5px 10px;
+  border-radius: 6px;
+  font-size: 13px;
+}
+
+.scrubber-clock {
+  font-weight: 700;
+  letter-spacing: 0.5px;
+}
+
+.scrubber-delta {
+  background: rgba(217, 119, 6, 0.25);
+  color: #fbbf24;
+  padding: 2px 6px;
+  border-radius: 4px;
+  font-size: 11px;
+  font-weight: 700;
+}
+
+.scrubber-stage-badge {
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.5px;
+  text-transform: uppercase;
+  padding: 4px 8px;
+  border-radius: 4px;
+}
+
+.scrubber-stage-badge.safe { background: rgba(5, 150, 105, 0.25); color: #34d399; }
+.scrubber-stage-badge.watch { background: rgba(217, 119, 6, 0.25); color: #fbbf24; }
+.scrubber-stage-badge.warn { background: rgba(234, 88, 12, 0.25); color: #fb923c; }
+.scrubber-stage-badge.breach { background: rgba(225, 29, 72, 0.35); color: #f43f5e; border: 1px solid rgba(225, 29, 72, 0.5); }
+
+.scrubber-stats {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 11px;
+  color: #94a3b8;
+}
+
+.signal-breach {
+  color: #fb7185 !important;
+}
+
+.scrubber-controls {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.hud-ctrl-btn {
+  background: rgba(255, 255, 255, 0.08);
+  border: 1px solid rgba(255, 255, 255, 0.15);
+  color: #f8fafc;
+  padding: 6px 10px;
+  border-radius: 6px;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 11px;
+  font-weight: 600;
+  transition: all 0.15s ease;
+}
+
+.hud-ctrl-btn:hover {
+  background: rgba(255, 255, 255, 0.18);
+  border-color: rgba(255, 255, 255, 0.3);
+}
+
+.hud-ctrl-btn.primary {
+  background: #0284c7;
+  border-color: #0284c7;
+}
+
+.hud-ctrl-btn.primary.playing {
+  background: #e11d48;
+  border-color: #e11d48;
+}
+
+.hud-ctrl-btn.speed-toggle {
+  font-size: 10px;
+  padding: 5px 8px;
+}
+
+.scrubber-slider-container {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.scrubber-range-slider {
+  width: 100%;
+  accent-color: #0284c7;
+  cursor: pointer;
+  height: 6px;
+  border-radius: 3px;
+  background: rgba(255, 255, 255, 0.2);
+}
+
+.scrubber-milestones {
+  display: flex;
+  justify-content: space-between;
+  gap: 6px;
+}
+
+.milestone-btn {
+  background: none;
+  border: none;
+  color: #94a3b8;
+  font-size: 10px;
+  font-family: var(--font-data);
+  cursor: pointer;
+  padding: 2px 4px;
+  border-radius: 3px;
+  transition: color 0.15s;
+}
+
+.milestone-btn:hover,
+.milestone-btn.active {
+  color: #38bdf8;
+  font-weight: 600;
+}
+
+.milestone-btn.active.onset {
+  color: #fb923c;
+}
+
+.milestone-btn.active.peak {
+  color: #f43f5e;
+}
+
+/* =========================================================================
+   FEATURE 2: AI COMMAND BRIEFING MODAL & RADIO DISPATCH
+   ========================================================================= */
+.telemetry-briefing-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  background: linear-gradient(135deg, #e11d48, #be123c);
+  color: #ffffff;
+  border: 1px solid rgba(255, 255, 255, 0.25);
+  padding: 5px 12px;
+  border-radius: 6px;
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.5px;
+  cursor: pointer;
+  box-shadow: 0 2px 10px rgba(225, 29, 72, 0.35);
+  margin-left: auto;
+  transition: transform 0.15s ease, box-shadow 0.15s ease;
+}
+
+.telemetry-briefing-btn:hover {
+  transform: translateY(-1px);
+  box-shadow: 0 4px 14px rgba(225, 29, 72, 0.5);
+}
+
+.pulse-icon {
+  animation: pulseBeacon 1.8s infinite;
+}
+
+@keyframes pulseBeacon {
+  0% { transform: scale(1); opacity: 0.8; }
+  50% { transform: scale(1.15); opacity: 1; }
+  100% { transform: scale(1); opacity: 0.8; }
+}
+
+.briefing-modal-window {
+  background: #0f172a;
+  color: #f8fafc;
+  border: 1px solid rgba(255, 255, 255, 0.15);
+  border-radius: 14px;
+  box-shadow: 0 25px 60px rgba(0, 0, 0, 0.6), 0 0 30px rgba(225, 29, 72, 0.2);
+  width: min(94%, 740px);
+  max-height: 88vh;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+}
+
+.briefing-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 16px 20px;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+  background: rgba(30, 41, 59, 0.6);
+}
+
+.briefing-title-group {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.briefing-title-group h3 {
+  font-size: 15px;
+  font-weight: 700;
+  letter-spacing: 0.5px;
+}
+
+.briefing-sub {
+  font-size: 11px;
+  color: #94a3b8;
+}
+
+.briefing-body {
+  padding: 20px;
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.threat-banner {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  padding: 14px 18px;
+  border-radius: 10px;
+  background: rgba(225, 29, 72, 0.15);
+  border: 1px solid rgba(225, 29, 72, 0.4);
+}
+
+.threat-banner.breach {
+  background: rgba(225, 29, 72, 0.2);
+  border-color: #e11d48;
+  color: #fecdd3;
+}
+
+.threat-kicker {
+  display: block;
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 1px;
+  color: #f43f5e;
+}
+
+.golden-window-pill {
+  margin-left: auto;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  background: rgba(15, 23, 42, 0.7);
+  padding: 6px 12px;
+  border-radius: 6px;
+  font-size: 11px;
+  color: #fbbf24;
+  border: 1px solid rgba(251, 191, 36, 0.4);
+}
+
+.briefing-matrix {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
+  gap: 10px;
+}
+
+.matrix-card {
+  background: rgba(30, 41, 59, 0.6);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 8px;
+  padding: 10px 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.matrix-card label {
+  font-size: 9px;
+  font-weight: 700;
+  color: #94a3b8;
+  letter-spacing: 0.5px;
+}
+
+.matrix-card val {
+  font-size: 16px;
+  font-weight: 700;
+  color: #f8fafc;
+}
+
+.matrix-card small {
+  font-size: 10px;
+  color: #64748b;
+}
+
+.audio-dispatch-strip {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  background: rgba(30, 41, 59, 0.9);
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  border-radius: 8px;
+  padding: 10px 14px;
+}
+
+.audio-info {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.broadcast-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  background: #0284c7;
+  color: #ffffff;
+  border: none;
+  padding: 8px 14px;
+  border-radius: 6px;
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: 0.5px;
+  cursor: pointer;
+  transition: background 0.15s;
+}
+
+.broadcast-btn:hover {
+  background: #0369a1;
+}
+
+.broadcast-btn.active {
+  background: #e11d48;
+}
+
+.audio-waveform-anim {
+  display: flex;
+  align-items: center;
+  gap: 3px;
+  height: 18px;
+}
+
+.audio-waveform-anim .bar {
+  width: 3px;
+  background: #38bdf8;
+  border-radius: 2px;
+  animation: soundwave 1s infinite ease-in-out alternate;
+}
+
+.audio-waveform-anim .bar:nth-child(1) { height: 6px; animation-delay: 0.1s; }
+.audio-waveform-anim .bar:nth-child(2) { height: 16px; animation-delay: 0.3s; }
+.audio-waveform-anim .bar:nth-child(3) { height: 12px; animation-delay: 0.2s; }
+.audio-waveform-anim .bar:nth-child(4) { height: 18px; animation-delay: 0.4s; }
+.audio-waveform-anim .bar:nth-child(5) { height: 8px; animation-delay: 0.15s; }
+
+@keyframes soundwave {
+  0% { transform: scaleY(0.4); }
+  100% { transform: scaleY(1.3); }
+}
+
+.copy-memo-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  background: rgba(255, 255, 255, 0.08);
+  border: 1px solid rgba(255, 255, 255, 0.15);
+  color: #f8fafc;
+  padding: 7px 12px;
+  border-radius: 6px;
+  font-size: 11px;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.copy-memo-btn:hover {
+  background: rgba(255, 255, 255, 0.15);
+}
+
+.radio-transcript-box {
+  background: rgba(15, 23, 42, 0.9);
+  border-left: 3px solid #0284c7;
+  border-radius: 4px;
+  padding: 10px 14px;
+}
+
+.transcript-label {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 10px;
+  font-weight: 700;
+  color: #38bdf8;
+  letter-spacing: 0.5px;
+  margin-bottom: 6px;
+}
+
+.transcript-text {
+  font-size: 12px;
+  line-height: 1.5;
+  color: #cbd5e1;
+}
+
+.directives-section h4,
+.facilities-section h4 {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: 0.5px;
+  color: #94a3b8;
+  margin-bottom: 10px;
+}
+
+.directives-list {
+  list-style: none;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.directive-item {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  background: rgba(30, 41, 59, 0.5);
+  border: 1px solid rgba(255, 255, 255, 0.06);
+  border-radius: 6px;
+  padding: 8px 12px;
+  font-size: 12px;
+}
+
+.directive-index {
+  color: #38bdf8;
+  font-weight: 700;
+  font-size: 11px;
+}
+
+.directive-text {
+  color: #e2e8f0;
+  line-height: 1.4;
+}
+
+.facilities-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.facility-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  background: rgba(225, 29, 72, 0.15);
+  border: 1px solid rgba(225, 29, 72, 0.3);
+  padding: 5px 10px;
+  border-radius: 6px;
+  font-size: 11px;
+  color: #f8fafc;
+}
+
+.fac-dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: #e11d48;
+}
+
+.fac-risk {
+  background: #e11d48;
+  color: #ffffff;
+  padding: 1px 4px;
+  border-radius: 3px;
+  font-size: 9px;
+  font-weight: 700;
+}
+
+/* =========================================================================
+   FEATURE 3: STREET REALITY & VEHICLE CLEARANCE GAUGE (ZONE INSPECTOR)
+   ========================================================================= */
+.clearance-gauge-card {
+  background: var(--bg-inset);
+  border: 1px solid var(--border-color);
+  border-radius: 8px;
+  padding: 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  margin: 12px 0;
+}
+
+.clearance-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  border-bottom: 1px solid var(--border-color);
+  padding-bottom: 6px;
+}
+
+.clearance-title {
+  font-size: 10px;
+  font-weight: 700;
+  color: var(--text-2);
+  letter-spacing: 0.5px;
+}
+
+.clearance-cm {
+  font-size: 11px;
+  font-weight: 700;
+  color: var(--sev-breach);
+}
+
+.clearance-modes {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.clearance-mode-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 6px 8px;
+  border-radius: 5px;
+  font-size: 11px;
+  background: var(--bg-card);
+  border: 1px solid var(--border-color);
+}
+
+.clearance-mode-row.blocked {
+  border-color: rgba(225, 29, 72, 0.3);
+  background: rgba(225, 29, 72, 0.05);
+}
+
+.clearance-mode-row.required {
+  border-color: rgba(2, 132, 199, 0.4);
+  background: rgba(2, 132, 199, 0.08);
+}
+
+.clearance-hazard-note {
+  font-size: 10px;
+  line-height: 1.4;
+  color: var(--text-2);
+  background: rgba(0, 0, 0, 0.03);
+  padding: 6px 8px;
+  border-radius: 4px;
+}
+
+/* =========================================================================
+   FEATURE: GEMMA 3:4B LOCAL AI EXPLAINABILITY CARD
+   ========================================================================= */
+.gemma-ai-card {
+  background: linear-gradient(145deg, #1e1b4b 0%, #0f172a 100%);
+  border: 1px solid rgba(139, 92, 246, 0.35);
+  box-shadow: 0 4px 20px rgba(139, 92, 246, 0.15);
+  border-radius: 9px;
+  padding: 12px 14px;
+  color: #f8fafc;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  margin-top: 14px;
+}
+
+.gemma-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  border-bottom: 1px solid rgba(139, 92, 246, 0.2);
+  padding-bottom: 8px;
+}
+
+.gemma-title-group {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.gemma-title {
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.5px;
+  color: #c4b5fd;
+}
+
+.gemma-badges {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.gemma-badge-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  background: rgba(139, 92, 246, 0.25);
+  color: #a78bfa;
+  border: 1px solid rgba(139, 92, 246, 0.4);
+  padding: 2px 7px;
+  border-radius: 4px;
+  font-size: 10px;
+  font-weight: 600;
+}
+
+.gemma-latency {
+  background: rgba(255, 255, 255, 0.08);
+  color: #38bdf8;
+  padding: 2px 6px;
+  border-radius: 4px;
+  font-size: 10px;
+}
+
+.gemma-reload-btn {
+  background: rgba(255, 255, 255, 0.08);
+  border: 1px solid rgba(255, 255, 255, 0.15);
+  color: #e2e8f0;
+  padding: 4px 6px;
+  border-radius: 4px;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: all 0.15s ease;
+}
+
+.gemma-reload-btn:hover:not(:disabled) {
+  background: rgba(139, 92, 246, 0.3);
+  color: #ffffff;
+}
+
+.gemma-reload-btn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.spin-anim {
+  animation: spinSlow 1s linear infinite;
+}
+
+@keyframes spinSlow {
+  from { transform: rotate(0deg); }
+  to { transform: rotate(360deg); }
+}
+
+.gemma-loading-state {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 11px;
+  color: #cbd5e1;
+  padding: 10px 4px;
+}
+
+.gemma-body {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.gemma-text {
+  font-size: 12px;
+  line-height: 1.55;
+  color: #e2e8f0;
+}
+
+.gemma-footer {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  font-size: 9px;
+  color: #94a3b8;
+  border-top: 1px solid rgba(255, 255, 255, 0.08);
+  padding-top: 6px;
+  margin-top: 4px;
+}

@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react';
-import { X, Activity } from 'lucide-react';
+import { X, Activity, Brain, Sparkles, RefreshCw, Cpu } from 'lucide-react';
 import DiagnosticChart from './DiagnosticChart';
 
 function AttributionCurve({ contribution }) {
@@ -24,10 +24,13 @@ function AttributionCurve({ contribution }) {
   );
 }
 
-export default function ExplainDrawer({ zone, weather, onClose }) {
+export default function ExplainDrawer({ zone, weather, simHour = 0, onClose }) {
   const [explainData, setExplainData] = useState(null);
   const [loading, setLoading] = useState(false);
+  const [gemmaData, setGemmaData] = useState(null);
+  const [gemmaLoading, setGemmaLoading] = useState(false);
 
+  // Fast SHAP computation
   useEffect(() => {
     if (!zone) return;
     setLoading(true);
@@ -47,6 +50,31 @@ export default function ExplainDrawer({ zone, weather, onClose }) {
       });
   }, [zone, weather]);
 
+  // Local Ollama Gemma 3:4B explanation fetch
+  const fetchGemmaExplanation = () => {
+    if (!zone) return;
+    setGemmaLoading(true);
+    fetch(`/api/v1/explain/${zone.zone_id}/gemma`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(weather)
+    })
+      .then(res => res.json())
+      .then(data => {
+        setGemmaData(data);
+        setGemmaLoading(false);
+      })
+      .catch(err => {
+        console.error('Gemma fetch failed:', err);
+        setGemmaLoading(false);
+      });
+  };
+
+  useEffect(() => {
+    setGemmaData(null);
+    fetchGemmaExplanation();
+  }, [zone?.zone_id]);
+
   if (!zone) return null;
 
   const getSeverityClass = (prob, depth) => {
@@ -56,7 +84,8 @@ export default function ExplainDrawer({ zone, weather, onClose }) {
     return 'safe';
   };
 
-  const sevClass = getSeverityClass(zone.pred_prob, zone.pred_depth_med);
+  const currentSimDepth = zone.sim_depth != null ? zone.sim_depth : (zone.pred_depth_med || 0);
+  const sevClass = getSeverityClass(zone.pred_prob, currentSimDepth);
   const depthRange = zone.pred_depth_hi - zone.pred_depth_lo;
   const uncertainty = depthRange > 0.25 ? 'WIDE RANGE' : depthRange > 0.12 ? 'MEDIUM RANGE' : 'TIGHT RANGE';
   const action = zone.risk_level === 'HIGH'
@@ -64,6 +93,10 @@ export default function ExplainDrawer({ zone, weather, onClose }) {
     : zone.risk_level === 'MEDIUM'
       ? 'Prepare shelter access and monitor the route closely.'
       : 'Continue monitoring and verify local conditions.';
+
+  const gemmaActionMatch = gemmaData?.explanation?.match(/action:\s*([^.\n]+)/i);
+  const effectiveAction = gemmaActionMatch ? gemmaActionMatch[1].trim() + '.' : (explainData?.ai_action || action);
+
   const onsetText = zone.onset_hours < 24 ? `In approximately ${zone.onset_hours.toFixed(1)} hours` : 'Not expected this cycle';
   const peakText = zone.peak_hours < 24 ? `Peak in ${zone.peak_hours.toFixed(1)} hours` : 'Peak beyond forecast window';
 
@@ -83,8 +116,8 @@ export default function ExplainDrawer({ zone, weather, onClose }) {
 
       <div className="zone-meta-matrix">
         <div className="meta-item">
-          <label>MEDIAN DEPTH</label>
-          <val className="mono">{zone.pred_depth_med.toFixed(2)} m</val>
+          <label>SIMULATED DEPTH (T+{simHour.toFixed(1)}h)</label>
+          <val className="mono signal-breach">{currentSimDepth.toFixed(2)} m</val>
         </div>
         <div className="meta-item">
           <label>CONFIDENCE (80%)</label>
@@ -103,17 +136,46 @@ export default function ExplainDrawer({ zone, weather, onClose }) {
       <section className={`decision-brief ${sevClass}`}>
         <div className="decision-brief-header">
           <span className="decision-kicker">DECISION BRIEF</span>
-          <span className="decision-confidence mono">{uncertainty}</span>
+          <span className="decision-confidence mono">{gemmaData ? '⚡ GEMMA 3:4B VERIFIED' : uncertainty}</span>
         </div>
-        <strong>{action}</strong>
+        <strong>{effectiveAction}</strong>
         <div className="decision-timing">
           <span><label>ACT</label>{onsetText}</span>
           <span><label>PEAK</label>{peakText}</span>
         </div>
       </section>
 
+      {/* Street Reality & Vehicle Clearance Gauge */}
+      <div className="clearance-gauge-card">
+        <div className="clearance-header">
+          <span className="clearance-title mono">STREET REALITY &amp; PASSABILITY</span>
+          <span className="clearance-cm mono">{Math.round(currentSimDepth * 100)} cm WATER</span>
+        </div>
+        <div className="clearance-modes">
+          <div className={`clearance-mode-row ${currentSimDepth >= 0.20 ? 'blocked' : 'passable'}`}>
+            <span className="mode-name">🚗 Civilian Sedans / Cars</span>
+            <span className="mode-status mono">{currentSimDepth >= 0.20 ? '🔴 IMPASSABLE' : '🟢 PASSABLE'}</span>
+          </div>
+          <div className={`clearance-mode-row ${currentSimDepth >= 0.45 ? 'blocked' : 'passable'}`}>
+            <span className="mode-name">🛻 Emergency 4x4 / Trucks</span>
+            <span className="mode-status mono">{currentSimDepth >= 0.45 ? '🔴 BLOCKED (>45cm)' : '🟢 ACCESSIBLE'}</span>
+          </div>
+          <div className={`clearance-mode-row ${currentSimDepth >= 0.45 ? 'required' : 'standby'}`}>
+            <span className="mode-name">🚤 NDRF Inflatable Boats</span>
+            <span className="mode-status mono">{currentSimDepth >= 0.45 ? '⚡ MANDATORY CRAFT' : '⚪ SHALLOW RUNOFF'}</span>
+          </div>
+        </div>
+        <div className="clearance-hazard-note mono">
+          {currentSimDepth >= 0.60
+            ? '⚠️ HAZARD: Ground floor dwellings submerged. Vertical evacuation mandatory.'
+            : currentSimDepth >= 0.30
+            ? '⚠️ CAUTION: Knee-deep water. De-energize low electrical switchboards.'
+            : 'ℹ️ NOTICE: Surface drainage flow within manageable curb threshold.'}
+        </div>
+      </div>
+
       <div className="shap-section-title">
-        <Activity size={15} style={{ color: 'var(--signal)' }} /> SHAP Feature Attributions
+        <Activity size={15} style={{ color: 'var(--signal)' }} /> ML EVIDENCE
       </div>
 
       {loading ? (
@@ -135,11 +197,49 @@ export default function ExplainDrawer({ zone, weather, onClose }) {
             ))}
           </div>
 
-          <div className="diagnostic-card">
-            <p><strong>Diagnostic Summary:</strong></p>
-            <p>{explainData.summary}</p>
+          {/* Gemma 3:4B Local AI Explainability Card */}
+          <div className="gemma-ai-card">
+            <div className="gemma-header">
+              <div className="gemma-title-group">
+                <Brain size={15} style={{ color: '#8b5cf6' }} />
+                <span className="gemma-title mono">GEMMA 3:4B LOCAL AI INSIGHT</span>
+              </div>
+              <div className="gemma-badges">
+                <span className="gemma-badge-pill mono">
+                  <Cpu size={10} /> gemma3:4b
+                </span>
+                {gemmaData?.latency_sec && (
+                  <span className="gemma-latency mono">{gemmaData.latency_sec}s</span>
+                )}
+                <button
+                  className="gemma-reload-btn"
+                  onClick={fetchGemmaExplanation}
+                  disabled={gemmaLoading}
+                  title="Regenerate with Gemma 3:4B"
+                >
+                  <RefreshCw size={11} className={gemmaLoading ? 'spin-anim' : ''} />
+                </button>
+              </div>
+            </div>
 
-            <DiagnosticChart series={explainData.trend || null} />
+            {gemmaLoading ? (
+              <div className="gemma-loading-state mono">
+                <Sparkles size={13} className="pulse-icon signal" />
+                <span>Local Gemma 3:4B analyzing SHAP drivers &amp; physical flood causality...</span>
+              </div>
+            ) : gemmaData ? (
+              <div className="gemma-body">
+                <p className="gemma-text">{gemmaData.explanation}</p>
+                <div className="gemma-footer mono">
+                  <span>MODEL: gemma3:4b (Ollama local)</span>
+                  <span>STATUS: {gemmaData.status}</span>
+                </div>
+              </div>
+            ) : (
+              <div className="gemma-body">
+                <p className="gemma-text">{explainData.ai_explanation || explainData.summary}</p>
+              </div>
+            )}
           </div>
         </>
       ) : (

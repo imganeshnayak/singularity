@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { Agentation } from 'agentation';
-import { Map, Bell, Ambulance, ShieldCheck, Sliders, Activity, Info, Clock, AlertTriangle, MapPin, Settings } from 'lucide-react';
+import { Map, Bell, Ambulance, ShieldCheck, Sliders, Activity, Info, Clock, AlertTriangle, MapPin, Settings, Radio } from 'lucide-react';
 import WeatherControls from './components/WeatherControls';
 import InteractiveMap from './components/InteractiveMap';
 import ExplainDrawer from './components/ExplainDrawer';
@@ -8,6 +8,7 @@ import AlertsPanel from './components/AlertsPanel';
 import RespondersPanel from './components/RespondersPanel';
 import SafeSheltersPanel from './components/SafeSheltersPanel';
 import LocationSelector from './components/LocationSelector';
+import CommandBriefingModal from './components/CommandBriefingModal';
 import './App.css';
 
 export default function App() {
@@ -43,6 +44,8 @@ export default function App() {
   const [selectedZone, setSelectedZone] = useState(null);
   const [loading, setLoading] = useState(false);
   const [lastUpdated, setLastUpdated] = useState(new Date());
+  const [simHour, setSimHour] = useState(0);
+  const [showBriefingModal, setShowBriefingModal] = useState(false);
 
   const fetchAllData = useCallback(async (currentWeather, sectorOverride = null, originOverride = null) => {
     const sectorToUse = sectorOverride || currentSector;
@@ -299,6 +302,10 @@ export default function App() {
             <span className="telemetry-label">LAST UPDATED</span>
             <span className="telemetry-val mono signal">{formatTimeIST(lastUpdated)}</span>
           </div>
+          <button className="telemetry-briefing-btn" onClick={() => setShowBriefingModal(true)}>
+            <Radio size={13} className="signal-breach pulse-icon" />
+            <span>AI COMMAND BRIEFING</span>
+          </button>
         </div>
 
         {!isLive && (
@@ -328,12 +335,15 @@ export default function App() {
                 selectedZone={selectedZone}
                 onSelectZone={setSelectedZone}
                 currentSector={currentSector}
+                simHour={simHour}
+                onSimHourChange={setSimHour}
               />
 
               {selectedZone ? (
                 <ExplainDrawer
                   zone={selectedZone}
                   weather={weather}
+                  simHour={simHour}
                   onClose={() => setSelectedZone(null)}
                 />
               ) : (
@@ -365,6 +375,13 @@ export default function App() {
           currentSector={currentSector}
           onUpdateSector={handleSectorChange}
           onClose={() => setShowLocationModal(false)}
+        />
+      )}
+
+      {showBriefingModal && (
+        <CommandBriefingModal
+          weather={weather}
+          onClose={() => setShowBriefingModal(false)}
         />
       )}
 
