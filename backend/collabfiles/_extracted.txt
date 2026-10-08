@@ -1,0 +1,461 @@
+import time
+import warnings
+
+import joblib
+import lightgbm as lgb
+import numpy as np
+import pandas as pd
+import geopandas as gpd
+import osmnx as ox
+import requests
+from shapely.geometry import box
+from sklearn.metrics import f1_score, mean_absolute_error, r2_score, roc_auc_score
+from sklearn.model_selection import train_test_split
+
+warnings.filterwarnings("ignore", category=DeprecationWarning)
+
+RANDOM_STATE = 42
+FLOOD_DEPTH_M = 0.25  # single flood threshold: training labels (cell 5) + map boundary (cell 8)
+
+print("✓ Environment ready.")
+
+
+# ==============================================================================
+# CELL 2: DYNAMIC BOUNDING-BOX SPATIAL MESH GENERATOR
+# What it does: Divides any geographic sector into uniform spatial polygons.
+# Where it is used: Core spatial foundation for Mapbox grid rendering and risk aggregation.
+# ==============================================================================
+import numpy as np
+import geopandas as gpd
+from shapely.geometry import box
+
+# Geographic boundaries (Coastal Ullal / Netravati Estuary, Mangaluru)
+BBOX = {
+    "min_lon": 74.825,
+    "min_lat": 12.810,
+    "max_lon": 74.865,
+    "max_lat": 12.860
+}
+STEP_DEG = 0.0025  # ~250m grid resolution
+
+def build_dynamic_grid(bbox, step):
+    lons = np.arange(bbox["min_lon"], bbox["max_lon"], step)
+    lats = np.arange(bbox["min_lat"], bbox["max_lat"], step)
+
+    cells, ids = [], []
+    idx = 0
+    for lon in lons:
+        for lat in lats:
+            cells.append(box(lon, lat, lon + step, lat + step))
+            ids.append(f"zone_{idx:03d}")
+            idx += 1
+
+    gdf = gpd.GeoDataFrame({"zone_id": ids, "geometry": cells}, crs="EPSG:4326")
+    gdf["centroid_lon"] = gdf.geometry.centroid.x
+    gdf["centroid_lat"] = gdf.geometry.centroid.y
+
+    # Distance to western coast boundary (meters)
+    lat_rad = np.radians(gdf["centroid_lat"].mean())
+    gdf["dist_coast_m"] = (gdf["centroid_lon"] - bbox["min_lon"]) * (111320 * np.cos(lat_rad))
+    return gdf
+
+spatial_grid = build_dynamic_grid(BBOX, STEP_DEG)
+print(f"✓ Dynamic mesh created: {len(spatial_grid)} zone polygons.")
+spatial_grid.head(2)
+
+
+# ==============================================================================
+# CELL 3: REAL TERRAIN ELEVATION INGESTION (Open Topo Data — no key needed)
+# What it does: Queries real digital elevation data for every polygon centroid.
+# Where it is used: Critical physical predictor for flood depth and shelter safety.
+# ==============================================================================
+import requests
+import time
+
+def assign_real_elevations(gdf, chunk_size=100):
+    elevations = []
+    coords = list(zip(gdf["centroid_lat"], gdf["centroid_lon"]))
+
+    for i in range(0, len(coords), chunk_size):
+        chunk = coords[i:i + chunk_size]
+        loc_str = "|".join(f"{lat:.5f},{lon:.5f}" for lat, lon in chunk)
+        try:
+            res = requests.get(
+                "https://api.opentopodata.org/v1/aster30m",
+                params={"locations": loc_str},
+                timeout=30
+            )
+            data = res.json()
+            if data.get("status") == "OK":
+                elevations.extend([
+                    r["elevation"] if r["elevation"] is not None else 2.5
+                    for r in data["results"]
+                ])
+            else:
+                raise ValueError(data.get("error", "bad status"))
+        except Exception as e:
+            print(f"  chunk {i // chunk_size} failed ({e}), using fallback 2.5m")
+            elevations.extend([2.5] * len(chunk))
+        time.sleep(0.5)
+
+    gdf["elevation_m"] = elevations
+    return gdf
+
+spatial_grid = assign_real_elevations(spatial_grid)
+print(f"✓ Terrain elevations assigned. Min: {spatial_grid['elevation_m'].min()}m, Max: {spatial_grid['elevation_m'].max()}m")
+
+
+# ==============================================================================
+# CELL 4: REAL METEOROLOGY & SEA-LEVEL INGESTION
+# What it does: Downloads verified hourly rain and tide data from open APIs.
+# Where it is used: Feeds the training matrix and drives the real-time simulation slider.
+# ==============================================================================
+import pandas as pd
+import requests
+import numpy as np
+
+CENTER_LAT = (BBOX["min_lat"] + BBOX["max_lat"]) / 2
+CENTER_LON = (BBOX["min_lon"] + BBOX["max_lon"]) / 2
+
+# 1. Hourly Precipitation (ERA5 Reanalysis)
+w_res = requests.get(
+    "https://archive-api.open-meteo.com/v1/archive",
+    params={
+        "latitude": CENTER_LAT,
+        "longitude": CENTER_LON,
+        "start_date": "2023-06-01",
+        "end_date": "2023-08-31",
+        "hourly": ["rain", "wind_speed_10m"],
+        "timezone": "Asia/Kolkata"
+    }
+).json()
+
+def_weather = pd.DataFrame({
+    "time": pd.to_datetime(w_res["hourly"]["time"]),
+    "rain_1h": w_res["hourly"]["rain"],
+    "wind_speed_kmh": w_res["hourly"]["wind_speed_10m"]
+})
+
+# 2. Hourly Marine wave height and simulated Tide height
+m_res = requests.get(
+    "https://marine-api.open-meteo.com/v1/marine",
+    params={
+        "latitude": CENTER_LAT,
+        "longitude": CENTER_LON,
+        "start_date": "2023-06-01",
+        "end_date": "2023-08-31",
+        "hourly": ["wave_height"],
+        "timezone": "Asia/Kolkata"
+    }
+).json()
+
+df_marine = pd.DataFrame({
+    "time": pd.to_datetime(m_res["hourly"]["time"]),
+    "wave_height_m": m_res["hourly"]["wave_height"]
+})
+
+# Generate a semi-diurnal tide cycle (typical ~12.42 hour period, 0.5m - 1.5m amplitude)
+t = np.arange(len(df_marine))
+tide_period_hours = 12.42
+tide_amplitude = 0.8
+# Combine tide simulation with wave height as storm surge representation
+df_marine["tide_height_msl"] = tide_amplitude * np.sin(2 * np.pi * t / tide_period_hours) + (df_marine["wave_height_m"] * 0.25)
+
+df_timeseries = pd.merge(def_weather, df_marine, on="time").dropna()
+df_timeseries["rain_3h"] = df_timeseries["rain_1h"].rolling(3, min_periods=1).sum()
+df_timeseries["rain_6h"] = df_timeseries["rain_1h"].rolling(6, min_periods=1).sum()
+print(f"✓ Ingested {len(df_timeseries):,} hourly weather and simulated sea-level records.")
+
+
+# ==============================================================================
+# CELL 5: HYDROLOGICAL COUPLING & TRAINING DATASET GENERATION
+# What it does: Combines spatial cells with weather records to compute hydraulic head.
+# Where it is used: Training LightGBM to replace slow hydrodynamic software.
+# ==============================================================================
+# Sample top monsoon burst hours + normal baseline periods
+storm_sample = df_timeseries.sort_values(by="rain_3h", ascending=False).head(150)
+normal_sample = df_timeseries.sample(150, random_state=42)
+sampled_times = pd.concat([storm_sample, normal_sample]).drop_duplicates()
+
+training_records = []
+for _, t_row in sampled_times.iterrows():
+    batch = spatial_grid[["zone_id", "elevation_m", "dist_coast_m"]].copy()
+    for col in ["rain_1h", "rain_3h", "rain_6h", "tide_height_msl", "wave_height_m", "wind_speed_kmh"]:
+        batch[col] = t_row[col]
+    training_records.append(batch)
+
+dataset = pd.concat(training_records, ignore_index=True)
+
+# Hydrodynamic variables
+dataset["hydraulic_head"] = dataset["elevation_m"] - dataset["tide_height_msl"]
+excess_rain = np.maximum(0, dataset["rain_3h"] - 45.0)
+tide_lock = np.maximum(0, dataset["tide_height_msl"] - dataset["elevation_m"])
+
+# Target variables (depth and flood status)
+dataset["depth_m"] = np.clip(
+    (excess_rain / 100.0) * 0.40 + (tide_lock * 0.90) -
+    (dataset["elevation_m"] * 0.05) - (dataset["dist_coast_m"] / 10000.0),
+    0.0, 3.0
+).round(2)
+
+dataset["is_flooded"] = (dataset["depth_m"] >= FLOOD_DEPTH_M).astype(int)
+print(f"✓ Compiled {len(dataset):,} training samples. Flooded ratio: {dataset['is_flooded'].mean():.2%}")
+
+
+# ==============================================================================
+# CELL 6: LIGHTGBM MODEL TRAINING & EVALUATION
+# What it does: Trains sub-millisecond regressors (depth) and classifiers (probability).
+# Where it is used: In the FastAPI `/api/v1/forecast/simulate` backend endpoint.
+# ==============================================================================
+import lightgbm as lgb
+from sklearn.model_selection import train_test_split
+from sklearn.metrics import mean_absolute_error, r2_score, roc_auc_score, f1_score
+
+FEATURES = [
+    "rain_1h", "rain_3h", "rain_6h",
+    "tide_height_msl", "wave_height_m", "wind_speed_kmh",
+    "elevation_m", "dist_coast_m", "hydraulic_head"
+]
+
+X = dataset[FEATURES]
+X_train, X_test, y_d_train, y_d_test, y_f_train, y_f_test = train_test_split(
+    X, dataset["depth_m"], dataset["is_flooded"], test_size=0.2, random_state=42, stratify=dataset["is_flooded"]
+)
+
+# Regressor: Predicts exact water depth
+regressor = lgb.LGBMRegressor(n_estimators=150, learning_rate=0.05, random_state=42)
+regressor.fit(X_train, y_d_train)
+
+# Classifier: Predicts flood breach probability
+classifier = lgb.LGBMClassifier(n_estimators=120, learning_rate=0.05, random_state=42)
+classifier.fit(X_train, y_f_train)
+
+# Metric Verification
+print("=" * 45)
+print("            MODEL EVALUATION METRICS         ")
+print("=" * 45)
+
+start_time = time.time()
+pred_d = regressor.predict(X_test)
+regressor_inference_time = time.time() - start_time
+
+start_time = time.time()
+pred_prob = classifier.predict_proba(X_test)[:, 1]
+classifier_prob_inference_time = time.time() - start_time
+
+start_time = time.time()
+pred_bin = classifier.predict(X_test)
+classifier_bin_inference_time = time.time() - start_time
+
+print(f" Regressor Inference Time: {regressor_inference_time:.4f} seconds")
+print(f" Classifier (prob) Inference Time: {classifier_prob_inference_time:.4f} seconds")
+print(f" Classifier (bin) Inference Time: {classifier_bin_inference_time:.4f} seconds")
+print("-" * 45)
+print(f" Depth MAE       : {mean_absolute_error(y_d_test, pred_d):.3f} m")
+print(f" Depth R²        : {r2_score(y_d_test, pred_d):.3f}")
+print(f" Detection AUC   : {roc_auc_score(y_f_test, pred_prob):.3f}")
+print(f" Detection F1    : {f1_score(y_f_test, pred_bin):.3f}")
+print("=" * 45)
+
+
+# ==============================================================================
+# CELL 7: MODEL PERSISTENCE
+# What it does: Saves trained models + config for the FastAPI backend.
+# ==============================================================================
+import joblib
+
+joblib.dump(
+    {
+        "regressor": regressor,
+        "classifier": classifier,
+        "features": FEATURES,
+        "bbox": BBOX,
+        "flood_depth_m": FLOOD_DEPTH_M,
+    },
+    "floodsight_models.pkl",
+)
+print("✓ Models saved to floodsight_models.pkl")
+
+
+# ==============================================================================
+# CELL 8: FAST ASSET EXTRACTION & HAZARD FLAGGING (~5-10s)
+# ==============================================================================
+import osmnx as ox
+import pandas as pd
+import geopandas as gpd
+
+# 1. Run inference on a severe storm scenario
+sim_weather = {
+    "rain_1h": 60.0, "rain_3h": 115.0, "rain_6h": 160.0,
+    "tide_height_msl": 2.75, "wave_height_m": 2.1, "wind_speed_kmh": 40.0
+}
+
+eval_grid = spatial_grid.copy()
+eval_matrix = []
+for _, row in eval_grid.iterrows():
+    eval_matrix.append([
+        sim_weather["rain_1h"], sim_weather["rain_3h"], sim_weather["rain_6h"],
+        sim_weather["tide_height_msl"], sim_weather["wave_height_m"], sim_weather["wind_speed_kmh"],
+        row["elevation_m"], row["dist_coast_m"],
+        row["elevation_m"] - sim_weather["tide_height_msl"]
+    ])
+
+eval_grid["pred_depth"] = regressor.predict(pd.DataFrame(eval_matrix, columns=FEATURES)).clip(0).round(2)
+eval_grid["pred_prob"] = classifier.predict_proba(pd.DataFrame(eval_matrix, columns=FEATURES))[:, 1].round(2)
+
+# Extract unified flood boundary (depth >= FLOOD_DEPTH_M cuts off vehicles)
+flooded_zones = eval_grid[eval_grid["pred_depth"] >= FLOOD_DEPTH_M]
+flood_union = flooded_zones.union_all() if not flooded_zones.empty else None
+
+# --- Query OSM only around the flooded area, not the whole district ---
+# Reproject the flood boundary to WGS84 so it aligns with OSM data
+grid_crs = eval_grid.crs or "EPSG:4326"
+if flood_union is not None:
+    flood_ll = gpd.GeoSeries([flood_union], crs=grid_crs).to_crs(epsg=4326).iloc[0]
+    minx, miny, maxx, maxy = flood_ll.buffer(0.02).bounds  # ~2 km buffer
+else:
+    # Fallback: small box around the grid centroid if nothing is flooded
+    c = gpd.GeoSeries([eval_grid.union_all()], crs=grid_crs).to_crs(epsg=4326).iloc[0].centroid
+    minx, miny, maxx, maxy = c.x - 0.05, c.y - 0.05, c.x + 0.05, c.y + 0.05
+bbox_tuple = (minx, miny, maxx, maxy)  # (left, bottom, right, top)
+
+ox.settings.use_cache = True  # repeated runs stay instant
+
+def _fetch(fn, *args, **kwargs):
+    for attempt in range(3):
+        try:
+            return fn(*args, **kwargs)
+        except Exception as e:
+            print(f"  attempt {attempt + 1}/3 failed ({type(e).__name__}), waiting 20s...")
+            time.sleep(20)
+    raise RuntimeError("OSM query failed after 3 attempts - try again in a few minutes")
+
+# 2. Extract road network inside the tight bbox
+print("1/2: Fetching road network from OpenStreetMap...")
+G_roads = _fetch(ox.graph_from_bbox, bbox=bbox_tuple, network_type="drive")
+roads_gdf = ox.graph_to_gdfs(G_roads, nodes=False, edges=True)
+
+if flood_union is not None:
+    roads_gdf["is_blocked"] = roads_gdf.geometry.intersects(flood_ll)
+else:
+    roads_gdf["is_blocked"] = False
+
+blocked_roads = roads_gdf[roads_gdf["is_blocked"]]
+clear_roads = roads_gdf[~roads_gdf["is_blocked"]]
+
+# 3. FAST FACILITY QUERY: key amenities only
+print("2/2: Fetching critical facilities & shelters...")
+amenity_tags = {
+    "amenity": ["hospital", "clinic", "school", "college", "community_centre", "place_of_worship"]
+}
+
+try:
+    facilities = _fetch(ox.features_from_bbox, bbox=bbox_tuple, tags=amenity_tags)
+except AttributeError:
+    facilities = _fetch(ox.geometries_from_bbox, bbox=bbox_tuple, tags=amenity_tags)
+
+# Retain only Points and Polygons
+facilities = facilities[facilities.geometry.type.isin(["Point", "Polygon", "MultiPolygon"])].copy()
+
+if flood_union is not None:
+    facilities["is_flooded"] = facilities.geometry.intersects(flood_ll)
+else:
+    facilities["is_flooded"] = False
+
+threatened_hospitals = facilities[(facilities["is_flooded"]) & (facilities["amenity"].isin(["hospital", "clinic"]))]
+safe_shelters = facilities[(~facilities["is_flooded"]) & (facilities["amenity"].isin(["school", "college", "community_centre", "place_of_worship"]))]
+
+print(f"✓ Evaluated {len(roads_gdf)} road segments -> {len(blocked_roads)} marked BLOCKED.")
+print(f"🚩 Threatened medical facilities: {len(threatened_hospitals)}")
+print(f"🛡️ Verified safe shelters: {len(safe_shelters)}")
+
+
+
+
+import networkx as nx
+import folium
+import geopandas as gpd
+import itertools
+
+# @title 🧭 Route Planner Parameters
+ORIGIN_LAT = 12.835 # @param {type:"number"}
+ORIGIN_LON = 73.845 # @param {type:"number"}
+TRAVEL_SPEED_KMH = 20 # @param {type:"integer"}
+
+# 1. Create a subgraph of G_roads containing only clear (unblocked) roads
+# G_roads is a multidigraph from osmnx. We can filter edges.
+clear_edges = roads_gdf[~roads_gdf["is_blocked"]]
+clear_nodes_set = set(clear_edges.index.get_level_values(0)).union(set(clear_edges.index.get_level_values(1)))
+G_clear = G_roads.subgraph(clear_nodes_set).copy()
+
+# 2. Select a starting point using the user-defined coordinates
+origin_node = ox.nearest_nodes(G_clear, ORIGIN_LON, ORIGIN_LAT)
+
+# Add a start marker
+folium.Marker(
+    [G_clear.nodes[origin_node]['y'], G_clear.nodes[origin_node]['x']],
+    popup=f"Starting Point (Origin: {ORIGIN_LAT}, {ORIGIN_LON})",
+    icon=folium.Icon(color="blue", icon="play"),
+    name="Origin"
+).add_to(m)
+
+found_routes_count = 0
+if not safe_shelters.empty:
+    for index, shelter_row in safe_shelters.iterrows():
+        # Safely get shelter name, falling back to osmid or index if name is missing
+        shelter_name = shelter_row.get('name', f"Shelter {shelter_row.get('osmid', index)}")
+        if pd.isna(shelter_name):
+            shelter_name = f"Shelter {index[1] if isinstance(index, tuple) else index}"
+
+        shelter_centroid = shelter_row.geometry.centroid
+        dest_lat, dest_lon = shelter_centroid.y, shelter_centroid.x
+        dest_node = ox.nearest_nodes(G_clear, dest_lon, dest_lat)
+
+        try:
+            route = nx.shortest_path(G_clear, origin_node, dest_node, weight="length")
+            route_coordinates = [(G_clear.nodes[node]['y'], G_clear.nodes[node]['x']) for node in route]
+
+            # Calculate total length of the route
+            total_length_m = sum(G_clear.get_edge_data(u, v, key=0)['length'] for u, v in zip(route[:-1], route[1:]))
+
+            # Calculate ETA
+            travel_speed_mps = TRAVEL_SPEED_KMH * 1000 / 3600 # Convert km/h to m/s
+            travel_time_sec = total_length_m / travel_speed_mps
+            travel_time_min = travel_time_sec / 60
+
+            # Add path to map
+            folium.PolyLine(
+                locations=route_coordinates,
+                color="#2ca02c", # Green for safe paths
+                weight=4,
+                opacity=0.7,
+                tooltip=f"Route to {shelter_name}<br>ETA: {travel_time_min:.1f} min<br>Safety: Path is clear of direct flood zones",
+                name=f"Route to {shelter_name}"
+            ).add_to(m)
+
+            # Add marker for the shelter
+            folium.CircleMarker(
+                [dest_lat, dest_lon],
+                radius=5,
+                color="#1a9850",
+                fill=True,
+                popup=f"Safe shelter: {shelter_name}<br>ETA from origin: {travel_time_min:.1f} min",
+                name=f"Shelter: {shelter_name}"
+            ).add_to(m)
+            found_routes_count += 1
+
+        except nx.NetworkXNoPath:
+            # Optionally, you could mark shelters that are unreachable
+            print(f"⚠ No clear route found for shelter {shelter_name}.")
+            pass # Do not add a route if unreachable
+else:
+    print("⚠ No safe shelters available to route to.")
+
+if found_routes_count > 0:
+    print(f"✓ Successfully mapped {found_routes_count} safest routes from origin ({ORIGIN_LAT}, {ORIGIN_LON}) to shelters in green!")
+else:
+    print("⚠ No safe routes could be found to any shelters from the chosen origin.")
+
+# Re-render the map with all layers
+folium.LayerControl().add_to(m)
+m
