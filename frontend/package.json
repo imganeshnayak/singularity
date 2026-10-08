@@ -10,6 +10,7 @@
     "preview": "vite preview"
   },
   "dependencies": {
+    "agentation": "^3.1.2",
     "react": "^19.2.8",
     "react-dom": "^19.2.8"
   },
