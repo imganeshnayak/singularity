@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { Agentation } from 'agentation';
-import { Map, Bell, Ambulance, ShieldCheck, Sliders, Activity, Info, Clock, AlertTriangle, MapPin, Settings, Radio } from 'lucide-react';
+import { Map, Bell, Ambulance, ShieldCheck, Sliders, Activity, Info, Clock, AlertTriangle, MapPin, Settings, Radio, Navigation } from 'lucide-react';
 import WeatherControls from './components/WeatherControls';
 import InteractiveMap from './components/InteractiveMap';
 import ExplainDrawer from './components/ExplainDrawer';
@@ -8,7 +8,9 @@ import AlertsPanel from './components/AlertsPanel';
 import RespondersPanel from './components/RespondersPanel';
 import SafeSheltersPanel from './components/SafeSheltersPanel';
 import LocationSelector from './components/LocationSelector';
+import CoastlinePicker from './components/CoastlinePicker';
 import CommandBriefingModal from './components/CommandBriefingModal';
+import SandboxPanel from './components/SandboxPanel';
 import './App.css';
 
 export default function App() {
@@ -44,7 +46,6 @@ export default function App() {
   const [selectedZone, setSelectedZone] = useState(null);
   const [loading, setLoading] = useState(false);
   const [lastUpdated, setLastUpdated] = useState(new Date());
-  const [simHour, setSimHour] = useState(0);
   const [showBriefingModal, setShowBriefingModal] = useState(false);
 
   const fetchAllData = useCallback(async (currentWeather, sectorOverride = null, originOverride = null) => {
@@ -234,6 +235,24 @@ export default function App() {
                 <ShieldCheck size={16} /> Safe Shelters
               </span>
             </button>
+
+            <button className={activeTab === 'sandbox' ? 'nav-menu-item active' : 'nav-menu-item'} onClick={() => setActiveTab('sandbox')}>
+              <span className="nav-menu-item-left">
+                <Sliders size={16} /> Action Sandbox
+              </span>
+            </button>
+
+            <a
+              href="/public"
+              className="nav-menu-item public-commute-nav-btn"
+              title="Open Public Citizen Safe Transit Portal"
+              style={{ textDecoration: 'none', marginTop: '6px', borderTop: '1px solid var(--border-color)', paddingTop: '10px' }}
+            >
+              <span className="nav-menu-item-left" style={{ color: '#0284c7' }}>
+                <Navigation size={16} /> Citizen Safe Commute
+              </span>
+              <span className="count-pill mono" style={{ background: '#0284c7', color: '#ffffff' }}>PUBLIC</span>
+            </a>
           </nav>
         </div>
 
@@ -335,15 +354,12 @@ export default function App() {
                 selectedZone={selectedZone}
                 onSelectZone={setSelectedZone}
                 currentSector={currentSector}
-                simHour={simHour}
-                onSimHourChange={setSimHour}
               />
 
               {selectedZone ? (
                 <ExplainDrawer
                   zone={selectedZone}
                   weather={weather}
-                  simHour={simHour}
                   onClose={() => setSelectedZone(null)}
                 />
               ) : (
@@ -367,11 +383,15 @@ export default function App() {
           {activeTab === 'shelters' && (
             <SafeSheltersPanel routes={routes} />
           )}
+
+          {activeTab === 'sandbox' && (
+            <SandboxPanel weather={weather} sector={currentSector} />
+          )}
         </main>
       </div>
 
       {showLocationModal && (
-        <LocationSelector
+        <CoastlinePicker
           currentSector={currentSector}
           onUpdateSector={handleSectorChange}
           onClose={() => setShowLocationModal(false)}

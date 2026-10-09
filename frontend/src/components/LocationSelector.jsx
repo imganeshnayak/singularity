@@ -9,9 +9,9 @@ const PRESET_CITIES = [
   { name: 'Panaji Goa', lat: 15.498, lon: 73.827 }
 ];
 
-export default function LocationSelector({ currentSector, onSelectSector, onClose }) {
-  // kept onUpdateSector as a deprecated alias so older call sites do not crash
-  const onUpdateSector = onSelectSector;
+export default function LocationSelector({ currentSector, onSelectSector, onUpdateSector: onUpdateSectorProp, onClose }) {
+  // support both prop names (App.jsx uses onUpdateSector)
+  const onUpdateSector = onSelectSector || onUpdateSectorProp;
   const [selectedCity, setSelectedCity] = useState(currentSector.city_name);
   const [customLat, setCustomLat] = useState(currentSector.center_lat);
   const [customLon, setCustomLon] = useState(currentSector.center_lon);

@@ -102,8 +102,8 @@ def run_zone_inference(bundle: Dict[str, Any], weather: WeatherScenario, custom_
         d_med = float(depth_med[idx])
         d_lo = float(depth_lo[idx])
         d_hi = float(depth_hi[idx])
-        oh = float(onset_hours[idx]) if p >= 0.25 else 24.0
-        ph = float(peak_hours[idx]) if p >= 0.25 else 24.0
+        oh = float(onset_hours[idx])
+        ph = float(peak_hours[idx])
 
         if p >= 0.65 or d_med >= 0.45:
             risk = "HIGH"
@@ -154,7 +154,15 @@ def set_custom_sector(sector: SectorConfig):
 
 @router.get("/live")
 def get_live_forecast():
-    weather_dict = fetch_live_weather()
+    bundle = get_models()
+    # Use active grid center so live weather follows user-chosen coastline
+    try:
+        grid = bundle["spatial_grid"]
+        lat = float(grid["centroid_lat"].mean())
+        lon = float(grid["centroid_lon"].mean())
+    except Exception:
+        lat, lon = 12.835, 74.845
+    weather_dict = fetch_live_weather(lat, lon)
     weather_obj = WeatherScenario(**weather_dict)
     bundle = get_models()
     zones = run_zone_inference(bundle, weather_obj)

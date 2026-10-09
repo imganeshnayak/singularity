@@ -24,7 +24,7 @@ function AttributionCurve({ contribution }) {
   );
 }
 
-export default function ExplainDrawer({ zone, weather, simHour = 0, onClose }) {
+export default function ExplainDrawer({ zone, weather, onClose }) {
   const [explainData, setExplainData] = useState(null);
   const [loading, setLoading] = useState(false);
   const [gemmaData, setGemmaData] = useState(null);
@@ -84,8 +84,8 @@ export default function ExplainDrawer({ zone, weather, simHour = 0, onClose }) {
     return 'safe';
   };
 
-  const currentSimDepth = zone.sim_depth != null ? zone.sim_depth : (zone.pred_depth_med || 0);
-  const sevClass = getSeverityClass(zone.pred_prob, currentSimDepth);
+  const predDepth = zone.pred_depth_med || 0;
+  const sevClass = getSeverityClass(zone.pred_prob, predDepth);
   const depthRange = zone.pred_depth_hi - zone.pred_depth_lo;
   const uncertainty = depthRange > 0.25 ? 'WIDE RANGE' : depthRange > 0.12 ? 'MEDIUM RANGE' : 'TIGHT RANGE';
   const action = zone.risk_level === 'HIGH'
@@ -116,8 +116,8 @@ export default function ExplainDrawer({ zone, weather, simHour = 0, onClose }) {
 
       <div className="zone-meta-matrix">
         <div className="meta-item">
-          <label>SIMULATED DEPTH (T+{simHour.toFixed(1)}h)</label>
-          <val className="mono signal-breach">{currentSimDepth.toFixed(2)} m</val>
+          <label>PREDICTED DEPTH (MEDIAN)</label>
+          <val className="mono signal-breach">{predDepth.toFixed(2)} m</val>
         </div>
         <div className="meta-item">
           <label>CONFIDENCE (80%)</label>

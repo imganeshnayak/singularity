@@ -12,6 +12,27 @@ from .forecast import run_zone_inference
 
 router = APIRouter(prefix="/api/v1/map", tags=["map_data"])
 
+# Scrape-once cache: OSM facilities per sector bbox so repeat severity
+# changes only re-filter (cheap) instead of re-scraping (slow).
+_fac_cache: dict = {}
+_safe_cache: dict = {}
+
+
+def _cached_facilities(bbox_tuple: tuple):
+    import osmnx as ox
+    key = tuple(round(x, 4) for x in bbox_tuple)
+    if key not in _fac_cache:
+        ox.settings.use_cache = True
+        tags = {"amenity": ["hospital", "clinic", "school", "college",
+                            "community_centre", "place_of_worship"]}
+        try:
+            fac = ox.features_from_bbox(bbox=bbox_tuple, tags=tags)
+        except AttributeError:
+            fac = ox.geometries_from_bbox(bbox=bbox_tuple, tags=tags)
+        fac = fac[fac.geometry.type.isin(["Point", "Polygon", "MultiPolygon"])].copy()
+        _fac_cache[key] = fac
+    return _fac_cache[key].copy()
+
 
 @router.post("/roads")
 def get_road_status(weather: WeatherScenario):
@@ -47,7 +68,17 @@ def get_road_status(weather: WeatherScenario):
 
             roads_gdf = ox.graph_to_gdfs(G_roads, nodes=False, edges=True)
             if flood_union is not None:
-                roads_gdf["is_blocked"] = roads_gdf.geometry.intersects(flood_union)
+                # Blocked only if a meaningful share of the segment lies
+                # inside flood water (≥25% of its length), not on a mere touch.
+                def _frac_blocked(g):
+                    try:
+                        if not g.intersects(flood_union):
+                            return False
+                        inter = g.intersection(flood_union)
+                        return (inter.length / (g.length + 1e-12)) >= 0.25
+                    except Exception:
+                        return True
+                roads_gdf["is_blocked"] = roads_gdf.geometry.map(_frac_blocked)
             else:
                 roads_gdf["is_blocked"] = False
 
@@ -140,7 +171,9 @@ def get_building_status(weather: WeatherScenario):
     zones = run_zone_inference(bundle, weather)
     grid = bundle["spatial_grid"]
 
-    flooded_zones = {z["zone_id"]: z for z in zones if z["pred_depth_med"] >= bundle["flood_depth_m"]}
+    # Unsafe = flooded depth OR any flagged risk zone (HIGH/MEDIUM),
+    # so shelters inside yellow/red-risk areas are never marked safe.
+    flooded_zones = {z["zone_id"]: z for z in zones if z["pred_depth_med"] >= bundle["flood_depth_m"] or z["risk_level"] in ("HIGH", "MEDIUM")}
     total_bounds = grid.total_bounds
     
     buildings = []
@@ -154,18 +187,8 @@ def get_building_status(weather: WeatherScenario):
         
         # We can cache facilities just like graph to avoid repeated slow overpass queries
         # But for now, we'll fetch them using osmnx's built-in cache
-        ox.settings.use_cache = True
-        amenity_tags = {
-            "amenity": ["hospital", "clinic", "school", "college", "community_centre", "place_of_worship"]
-        }
-        
-        try:
-            facilities = ox.features_from_bbox(bbox=bbox_tuple, tags=amenity_tags)
-        except AttributeError:
-            facilities = ox.geometries_from_bbox(bbox=bbox_tuple, tags=amenity_tags)
-
-        # Retain only points and polygons
-        facilities = facilities[facilities.geometry.type.isin(["Point", "Polygon", "MultiPolygon"])].copy()
+        # Scrape-once per sector; severity changes only re-filter below
+        facilities = _cached_facilities(bbox_tuple)
 
         flooded_geoms = [row.geometry for _, row in grid.iterrows() if row["zone_id"] in flooded_zones]
         flood_union = unary_union(flooded_geoms) if flooded_geoms else None
@@ -243,3 +266,30 @@ def get_building_status(weather: WeatherScenario):
         "safe_shelters": sum(1 for b in buildings if not b["is_flooded"] and b["type"] == "shelter"),
         "facilities": buildings
     }
+
+
+@router.post("/safe-zones")
+def get_safe_zones(weather: WeatherScenario):
+    """New safe locations only — LOW zones outside all red/yellow risk areas."""
+    import time
+    cache_key = (round(weather.rain_3h, 1), round(weather.tide_height_msl, 2),
+                 round(weather.wave_height_m, 2), round(weather.wind_speed_kmh, 1))
+    now = time.time()
+    entry = _safe_cache.get(cache_key)
+    if entry and now - entry["_ts"] < 60.0:
+        return entry["data"]
+    bundle = get_models()
+    zones = run_zone_inference(bundle, weather)
+    safe = []
+    for z in zones:
+        if z["risk_level"] != "LOW":
+            continue
+        coords = z["geometry"]["coordinates"][0]
+        cx = sum(p[0] for p in coords) / len(coords)
+        cy = sum(p[1] for p in coords) / len(coords)
+        safe.append({"zone_id": z["zone_id"], "coordinates": [cy, cx],
+                     "elevation_m": z["elevation_m"],
+                     "pred_depth_med": z["pred_depth_med"]})
+    data = {"count": len(safe), "safe_zones": safe}
+    _safe_cache[cache_key] = {"data": data, "_ts": now}
+    return data

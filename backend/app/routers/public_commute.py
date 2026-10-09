@@ -156,9 +156,26 @@ def evaluate_public_route(req: PublicCommuteRequest) -> Dict[str, Any]:
     speed_kmh = 22.0 if req.vehicle_type == "car" else (28.0 if req.vehicle_type == "suv" else (18.0 if req.vehicle_type == "bike" else 4.5))
     est_mins = max(3, int(round((dist_km / speed_kmh) * 60)))
 
-    # Estimate intersecting hazard zones
-    route_crosses_red = red_count > 0 and (req.from_lat < 12.83 or req.to_lat < 12.83)
+    # Estimate intersecting hazard zones — geometric check: does the
+    # straight-line trip corridor pass near any RED zone centroid?
+    route_crosses_red = False
     route_crosses_yellow = yellow_count > 0
+    try:
+        red_ids = {f["properties"]["zone_id"] for f in geojson_features if f["properties"]["category"] == "RED_HAZARD"}
+        red_zones = [z for z in zones if z["zone_id"] in red_ids]
+        for z in red_zones:
+            coords = z["geometry"]["coordinates"][0]
+            cx = sum(p[0] for p in coords) / len(coords)
+            cy = sum(p[1] for p in coords) / len(coords)
+            # point-to-segment distance in degrees vs corridor
+            for i in range(num_pts):
+                if abs(route_coords[i][0] - cy) < 0.004 and abs(route_coords[i][1] - cx) < 0.004:
+                    route_crosses_red = True
+                    break
+            if route_crosses_red:
+                break
+    except Exception:
+        route_crosses_red = red_count > 0
 
     now_dt = datetime.now()
     if earliest_onset_hours < 24:

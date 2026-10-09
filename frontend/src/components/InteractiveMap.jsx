@@ -1,7 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { MapContainer, TileLayer, GeoJSON, CircleMarker, Polyline, Popup, Tooltip, Marker, useMap } from 'react-leaflet';
 import L from 'leaflet';
-import TemporalScrubber, { calculateInundationAtHour } from './TemporalScrubber';
 
 // Helper component to re-center map dynamically when currentSector changes
 function MapViewController({ center, zones }) {
@@ -63,9 +62,7 @@ export default function InteractiveMap({
   onOriginChange,
   selectedZone,
   onSelectZone,
-  currentSector = { center_lat: 12.835, center_lon: 74.845 },
-  simHour = 0,
-  onSimHourChange
+  currentSector = { center_lat: 12.835, center_lon: 74.845 }
 }) {
   const CENTER = [currentSector.center_lat || 12.835, currentSector.center_lon || 74.845];
 
@@ -77,45 +74,27 @@ export default function InteractiveMap({
   // OpenStreetMap tiles - same as Colab's folium default (free, no token)
   const osmUrl = 'https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png';
 
-  // Calculate timing milestones
-  const validOnsets = (zones || [])
-    .filter(z => z.onset_hours != null && z.onset_hours < 24 && z.risk_level !== 'LOW')
-    .map(z => z.onset_hours);
-  const earliestOnset = validOnsets.length > 0 ? Math.min(...validOnsets) : 2.5;
+  // Affected flood zones based on ML predictions
+  const affectedZones = (zones || []).filter(z =>
+    (z.pred_depth_med != null && z.pred_depth_med >= 0.08) ||
+    z.risk_level === 'HIGH' ||
+    z.risk_level === 'MEDIUM'
+  );
 
-  const validPeaks = (zones || [])
-    .filter(z => z.peak_hours != null && z.peak_hours < 24 && z.risk_level !== 'LOW')
-    .map(z => z.peak_hours);
-  const peakSurge = validPeaks.length > 0 ? Math.min(...validPeaks) : earliestOnset + 2.0;
-
-  // 4D Dynamic Inundation: calculate water depth at current simHour
-  const zonesWithSim = (zones || []).map(z => {
-    const simDepth = calculateInundationAtHour(z, simHour);
-    return {
-      ...z,
-      sim_depth: simDepth
-    };
-  });
-
-  // Render ONLY active flooded zones at this specific hour
-  const affectedZones = zonesWithSim.filter(z => z.sim_depth >= 0.08 || (simHour === 0 && (z.pred_depth_med >= 0.10 || z.risk_level !== 'LOW')));
-  const totalRiskCount = (zones || []).filter(z => z.pred_depth_med >= 0.10 || z.risk_level !== 'LOW').length;
-
-  // Dynamic roads: turn red when simHour reaches road inundation threshold
-  const activeBlockedRoads = (roads || []).filter(r => {
-    if (!r.is_blocked) return false;
-    return simHour >= (earliestOnset * 0.75);
-  });
+  // Blocked road segments
+  const blockedRoads = (roads || []).filter(r => r.is_blocked);
 
   const zoneStyle = (feature) => {
-    const props = feature.properties || {};
-    const depth = props.sim_depth != null ? props.sim_depth : (props.pred_depth_med || 0);
+    const props = feature.properties || feature || {};
+    const depth = props.pred_depth_med || 0;
 
     let fillColor = '#d97706'; // Watch (Amber)
     if (depth >= 0.50) {
       fillColor = '#e11d48'; // Breach (Rose Red)
     } else if (depth >= 0.25) {
       fillColor = '#ea580c'; // Warning (Orange)
+    } else if (props.risk_level === 'HIGH') {
+      fillColor = '#ea580c';
     } else if (depth >= 0.10) {
       fillColor = '#d97706';
     } else {
@@ -129,7 +108,7 @@ export default function InteractiveMap({
       weight: isSelected ? 2.5 : 1,
       opacity: 0.9,
       color: isSelected ? '#ffffff' : 'rgba(225, 29, 72, 0.4)',
-      fillOpacity: isSelected ? 0.82 : 0.62
+      fillOpacity: isSelected ? 0.85 : 0.62
     };
   };
 
@@ -200,13 +179,11 @@ export default function InteractiveMap({
           />
         )}
 
-        {/* 1.5 Dynamic Blocked Road Overlay — ONLY segments submerged at current simHour.
-            Clear streets come from the OSM basemap itself (matching Colab notebook),
-            so the synthetic green mesh is intentionally NOT rendered. */}
-        {showRoutes && activeBlockedRoads.map((road, i) => (
+        {/* 1.5 Dynamic Blocked Road Overlay — ONLY segments submerged under current conditions. */}
+        {showRoutes && blockedRoads.map((road, i) => (
           road.coordinates && road.coordinates.length > 0 && (
             <Polyline
-              key={`road_blk_${i}_${simHour}`}
+              key={`road_blk_${i}`}
               positions={road.coordinates}
               pathOptions={{
                 color: '#e11d48',
@@ -264,7 +241,8 @@ export default function InteractiveMap({
 
         {/* 4. Safe Shelters Pin Markers */}
         {showShelters && buildings && buildings.map((b, i) => {
-          if (b.type !== 'shelter') return null;
+          // Only render safe locations outside red/yellow zones
+          if (b.type !== 'shelter' || b.is_flooded) return null;
           
           // Find the corresponding route to get the ETA
           const route = routes ? routes.find(r => r.shelter_name === b.name) : null;
@@ -326,16 +304,6 @@ export default function InteractiveMap({
         <div className="legend-item"><span className="severity-dot warn" /> Warning (≥0.25m)</div>
         <div className="legend-item"><span className="severity-dot watch" /> Watch (≥0.10m)</div>
       </div>
-
-      {/* 4D Temporal Inundation Timeline Scrubber (Docked at bottom center of map) */}
-      <TemporalScrubber
-        simHour={simHour}
-        onChangeHour={onSimHourChange || (() => {})}
-        earliestOnset={earliestOnset}
-        peakSurge={peakSurge}
-        activeBreachCount={affectedZones.length}
-        totalRiskCount={totalRiskCount}
-      />
     </div>
   );
 }

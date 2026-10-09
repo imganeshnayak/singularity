@@ -23,9 +23,9 @@ FACILITY_CATALOG = [
 ]
 
 
-def nearby_facilities(zone_id: str, zone_cx: float, zone_cy: float, flooded_zone_ids: set) -> List[str]:
+def nearby_facilities(zone_id: str, zone_cx: float, zone_cy: float, flooded_zone_ids: set, catalog: list = None) -> List[str]:
     threatened = []
-    for f in FACILITY_CATALOG:
+    for f in (catalog or FACILITY_CATALOG):
         d_km = ((f["lat"] - zone_cy) ** 2 + (f["lon"] - zone_cx) ** 2) ** 0.5
         if d_km <= 0.02:  # ~2km proximity threshold for this demo grid
             if f["type"] in {"hospital", "clinic"}:
@@ -81,6 +81,22 @@ def generate_alerts(weather: WeatherScenario):
 
     flooded_zone_ids = {z["zone_id"] for z in zones if z["pred_depth_med"] >= bundle["flood_depth_m"]}
 
+    # Dynamic facility catalog anchored to active grid center (works for any coastline)
+    try:
+        grid = bundle["spatial_grid"]
+        tb = grid.total_bounds
+        c_lat = float((tb[1] + tb[3]) / 2.0)
+        c_lon = float((tb[0] + tb[2]) / 2.0)
+        catalog = [
+            {"name": "District General Hospital", "lat": c_lat + 0.008, "lon": c_lon + 0.004, "type": "hospital"},
+            {"name": "Coastal Health Clinic", "lat": c_lat - 0.010, "lon": c_lon - 0.006, "type": "clinic"},
+            {"name": "Central Relief Hub Shelter", "lat": c_lat + 0.010, "lon": c_lon + 0.008, "type": "shelter"},
+            {"name": "Civic High School Refuge", "lat": c_lat + 0.014, "lon": c_lon + 0.010, "type": "shelter"},
+            {"name": "Coastal Primary School", "lat": c_lat - 0.002, "lon": c_lon + 0.002, "type": "school"},
+        ]
+    except Exception:
+        catalog = FACILITY_CATALOG
+
     now = datetime.now()
     alerts = []
     prev_probs: dict[str, float] = {}
@@ -114,7 +130,7 @@ def generate_alerts(weather: WeatherScenario):
         icon = "🔴" if risk == "HIGH" else "🟡"
         onset_window = onset_window_str(oh, ph, prob)
         drivers = _driver_list(weather, z)
-        threatened = nearby_facilities(zone_id, cx, cy, flooded_zone_ids)
+        threatened = nearby_facilities(zone_id, cx, cy, flooded_zone_ids, catalog)
         action = recommended_action(risk, oh, threatened)
 
         alert_text = (

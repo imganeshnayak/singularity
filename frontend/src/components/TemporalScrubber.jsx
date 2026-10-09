@@ -10,29 +10,51 @@ import { Play, Pause, RotateCcw, FastForward, Clock, AlertCircle, Waves } from '
  */
 export function calculateInundationAtHour(zone, t) {
   if (!zone) return 0;
-  const onset = zone.onset_hours != null && zone.onset_hours < 24 ? zone.onset_hours : 24;
-  const peak = zone.peak_hours != null && zone.peak_hours < 24 ? Math.max(zone.peak_hours, onset + 0.5) : 24;
-  const maxDepth = zone.pred_depth_med || 0;
 
-  if (maxDepth <= 0 || onset >= 24) return 0;
+  const elev = zone.elevation_m != null ? Number(zone.elevation_m) : 3.0;
+  const distCoast = zone.dist_coast_m != null ? Number(zone.dist_coast_m) : 2000;
+  let maxDepth = Number(zone.pred_depth_med) || 0;
 
-  // Phase 1: Pre-onset
-  if (t < onset) {
-    const preRatio = onset > 0 ? Math.min(1, t / onset) : 0;
-    return Math.max(0, maxDepth * 0.05 * preRatio);
+  // In coastal low-lying terrain (<= 3.2m), calculate hydrodynamic tidal head intrusion
+  // even if baseline rain is low, simulating storm/tide inundation over the 12h horizon
+  if (maxDepth <= 0.05 && elev <= 3.2) {
+    const proximity = Math.max(0.3, 1.0 - (distCoast / 4500));
+    maxDepth = Math.max(0.08, (3.2 - elev) * 0.35 * proximity);
   }
 
-  // Phase 2: Rising surge (Onset -> Peak)
+  // Physical onset and peak timing
+  let onset = (zone.onset_hours != null && zone.onset_hours < 20)
+    ? Number(zone.onset_hours)
+    : Math.max(0.5, Math.min(6.0, 0.8 + (elev - 0.5) * 1.1));
+
+  let peak = (zone.peak_hours != null && zone.peak_hours < 20 && zone.peak_hours > onset)
+    ? Number(zone.peak_hours)
+    : onset + 2.2;
+
+  if (maxDepth <= 0.02) return 0;
+
+  // T=0: baseline runoff
+  if (t <= 0) {
+    return Math.max(0, maxDepth * 0.05);
+  }
+
+  // Phase 1: Pre-onset (rising runoff)
+  if (t < onset) {
+    const preRatio = onset > 0 ? (t / onset) : 0;
+    return Math.max(0, maxDepth * (0.05 + 0.15 * preRatio));
+  }
+
+  // Phase 2: Rising surge (onset -> peak)
   if (t <= peak) {
     const progress = (t - onset) / Math.max(0.3, peak - onset);
-    const curve = Math.sin((progress * Math.PI) / 2); // 0 -> 1 smooth
-    return Math.max(0, maxDepth * (0.05 + 0.95 * curve));
+    const curve = Math.sin((progress * Math.PI) / 2); // 0 -> 1 smooth sinusoidal surge
+    return Math.max(0, maxDepth * (0.20 + 0.80 * curve));
   }
 
-  // Phase 3: Receding drainage post-peak (~8 hour drainage curve)
+  // Phase 3: Receding drainage post-peak (~7h recession)
   const recessionHours = 7.0;
   const elapsed = t - peak;
-  const drainRatio = Math.max(0, 1.0 - 0.75 * (elapsed / recessionHours));
+  const drainRatio = Math.max(0.05, 1.0 - 0.80 * (elapsed / recessionHours));
   return Math.max(0, maxDepth * drainRatio);
 }
 
@@ -134,7 +156,12 @@ export default function TemporalScrubber({
 
           <button
             className={`hud-ctrl-btn primary ${isPlaying ? 'playing' : ''}`}
-            onClick={() => setIsPlaying(!isPlaying)}
+            onClick={() => {
+              if (!isPlaying && simHour >= 12.0) {
+                onChangeHour(0);
+              }
+              setIsPlaying(!isPlaying);
+            }}
             title={isPlaying ? 'Pause Simulation' : 'Play 4D Temporal Inundation'}
             aria-label={isPlaying ? 'Pause' : 'Play'}
           >

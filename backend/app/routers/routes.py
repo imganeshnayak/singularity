@@ -63,7 +63,9 @@ def get_safe_shelter_routes(req: SafeRouteRequest):
     zones = run_zone_inference(bundle, req.weather)
     grid = bundle["spatial_grid"]
 
-    flooded_zones = {z["zone_id"] for z in zones if z["pred_depth_med"] >= bundle["flood_depth_m"]}
+    # Unsafe = flooded depth OR any flagged risk zone (HIGH/MEDIUM),
+    # so shelters inside yellow/red-risk areas are never listed as safe.
+    flooded_zones = {z["zone_id"] for z in zones if z["pred_depth_med"] >= bundle["flood_depth_m"] or z["risk_level"] in ("HIGH", "MEDIUM")}
 
     orig_lat, orig_lon = req.origin_lat, req.origin_lon
     # Default origin = grid center (matching Colab CENTER_LAT/CENTER_LON)
@@ -146,10 +148,19 @@ def get_safe_shelter_routes(req: SafeRouteRequest):
             logger.warning(f"OSM shelters fetch failed or empty, using local grid fallback: {e}")
             # shelter_defs remains the local default generated above
 
-        # 3. Build roads GDF and mark blocked edges (Colab: roads_gdf["is_blocked"])
+        # 3. Blocked only if ≥25% of the segment lies inside flood water,
+        # so roads merely touching a risk boundary stay open.
         roads_gdf = ox.graph_to_gdfs(G_roads, nodes=False, edges=True)
         if flood_union is not None:
-            roads_gdf["is_blocked"] = roads_gdf.geometry.intersects(flood_union)
+            def _frac_blocked(g):
+                try:
+                    if not g.intersects(flood_union):
+                        return False
+                    inter = g.intersection(flood_union)
+                    return (inter.length / (g.length + 1e-12)) >= 0.25
+                except Exception:
+                    return True
+            roads_gdf["is_blocked"] = roads_gdf.geometry.map(_frac_blocked)
         else:
             roads_gdf["is_blocked"] = False
 
@@ -257,7 +268,10 @@ def get_responder_priorities(weather: WeatherScenario):
     bundle = get_models()
     zones = run_zone_inference(bundle, weather)
 
-    depot_lat, depot_lon = 12.830, 74.845
+    grid = bundle["spatial_grid"]
+    total_bounds = grid.total_bounds
+    depot_lat = float((total_bounds[1] + total_bounds[3]) / 2.0)
+    depot_lon = float((total_bounds[0] + total_bounds[2]) / 2.0)
 
     priorities = []
     risk_zones = [z for z in zones if z["risk_level"] in ["HIGH", "MEDIUM"]]
