@@ -1,0 +1,496 @@
+/* =========================================================================
+   PUBLIC CITIZEN COMMUTER PORTAL STYLING
+   Completely isolated stylesheet for the public commuter route safety page
+   ========================================================================= */
+
+.public-commute-layout {
+  display: flex;
+  flex-direction: column;
+  width: 100vw;
+  height: 100vh;
+  background-color: #0b1120;
+  color: #f8fafc;
+  font-family: var(--font-ui);
+  overflow: hidden;
+}
+
+/* Header Bar */
+.public-header {
+  height: 56px;
+  background: rgba(15, 23, 42, 0.95);
+  border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0 20px;
+  gap: 16px;
+  z-index: 100;
+}
+
+.brand-group {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+}
+
+.brand-badge {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  background: rgba(2, 132, 199, 0.15);
+  border: 1px solid rgba(2, 132, 199, 0.35);
+  padding: 4px 10px;
+  border-radius: 6px;
+}
+
+.brand-name {
+  font-family: var(--font-display);
+  font-weight: 700;
+  font-size: 14px;
+  letter-spacing: 0.5px;
+  color: #38bdf8;
+}
+
+.brand-sub {
+  font-size: 11px;
+  color: #94a3b8;
+}
+
+.corridor-weather-strip {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.weather-pill {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  background: rgba(255, 255, 255, 0.06);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  padding: 4px 10px;
+  border-radius: 6px;
+  font-size: 11px;
+  color: #cbd5e1;
+}
+
+.switch-to-cmd-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  background: rgba(255, 255, 255, 0.08);
+  border: 1px solid rgba(255, 255, 255, 0.15);
+  color: #e2e8f0;
+  padding: 6px 12px;
+  border-radius: 6px;
+  font-size: 11px;
+  font-weight: 600;
+  text-decoration: none;
+  transition: all 0.15s ease;
+}
+
+.switch-to-cmd-btn:hover {
+  background: rgba(255, 255, 255, 0.18);
+  color: #ffffff;
+  border-color: rgba(255, 255, 255, 0.3);
+}
+
+/* Main Split View */
+.public-body-split {
+  display: flex;
+  flex: 1;
+  height: calc(100vh - 56px);
+  overflow: hidden;
+}
+
+/* Sidebar Controls */
+.public-sidebar {
+  width: 440px;
+  min-width: 400px;
+  background: #0f172a;
+  border-right: 1px solid rgba(255, 255, 255, 0.1);
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  padding: 16px;
+  overflow-y: auto;
+}
+
+.planner-card {
+  background: rgba(30, 41, 59, 0.5);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 10px;
+  padding: 14px;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.section-title {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 13px;
+  font-weight: 700;
+  color: #e2e8f0;
+}
+
+.input-group {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+}
+
+.input-group label {
+  font-size: 9px;
+  font-weight: 700;
+  color: #94a3b8;
+  letter-spacing: 0.5px;
+}
+
+.select-wrapper {
+  position: relative;
+  display: flex;
+  align-items: center;
+}
+
+.select-wrapper select {
+  width: 100%;
+  background: #1e293b;
+  border: 1px solid rgba(255, 255, 255, 0.15);
+  color: #f8fafc;
+  padding: 8px 12px 8px 34px;
+  border-radius: 6px;
+  font-size: 12px;
+  font-family: var(--font-ui);
+  cursor: pointer;
+  appearance: none;
+}
+
+.select-wrapper select:focus {
+  outline: none;
+  border-color: #38bdf8;
+}
+
+.from-pin {
+  position: absolute;
+  left: 10px;
+  color: #38bdf8;
+  pointer-events: none;
+}
+
+.to-pin {
+  position: absolute;
+  left: 10px;
+  color: #34d399;
+  pointer-events: none;
+}
+
+/* Vehicle Mode Buttons */
+.vehicle-selector {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 6px;
+}
+
+.veh-btn {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  background: #1e293b;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  color: #94a3b8;
+  padding: 6px 10px;
+  border-radius: 6px;
+  font-size: 11px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+
+.veh-btn:hover {
+  background: rgba(255, 255, 255, 0.08);
+  color: #f8fafc;
+}
+
+.veh-btn.active {
+  background: rgba(2, 132, 199, 0.25);
+  border-color: #0284c7;
+  color: #38bdf8;
+}
+
+/* Scenario Chips */
+.scenario-chips {
+  display: flex;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+
+.scen-chip {
+  background: #1e293b;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  color: #94a3b8;
+  padding: 4px 8px;
+  border-radius: 5px;
+  font-size: 10px;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.scen-chip:hover {
+  color: #f8fafc;
+}
+
+.scen-chip.active {
+  background: rgba(217, 119, 6, 0.25);
+  border-color: #d97706;
+  color: #fbbf24;
+}
+
+.recalc-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  background: #0284c7;
+  border: none;
+  color: #ffffff;
+  padding: 10px;
+  border-radius: 7px;
+  font-size: 12px;
+  font-weight: 700;
+  cursor: pointer;
+  transition: background 0.15s;
+  margin-top: 4px;
+}
+
+.recalc-btn:hover:not(:disabled) {
+  background: #0369a1;
+}
+
+.recalc-btn:disabled {
+  opacity: 0.7;
+  cursor: wait;
+}
+
+/* Trip Metrics Bar */
+.trip-metrics-card {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  background: rgba(15, 23, 42, 0.8);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 8px;
+  padding: 8px 12px;
+}
+
+.trip-metric {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.trip-metric label {
+  font-size: 8px;
+  color: #64748b;
+  letter-spacing: 0.5px;
+}
+
+.trip-metric val {
+  font-size: 12px;
+  font-weight: 700;
+  color: #e2e8f0;
+}
+
+.trip-metric val.breach {
+  color: #f43f5e;
+}
+
+.trip-metric val.safe {
+  color: #34d399;
+}
+
+.trip-divider {
+  color: #334155;
+  font-size: 14px;
+}
+
+/* GEMMA 3:4B INSIGHT CARD */
+.gemma-citizen-card {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.verdict-banner {
+  background: rgba(30, 41, 59, 0.7);
+  border-left: 4px solid #0284c7;
+  border-radius: 8px;
+  padding: 12px 14px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.verdict-header-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.verdict-kicker {
+  font-size: 9px;
+  font-weight: 700;
+  letter-spacing: 0.5px;
+  color: #94a3b8;
+}
+
+.golden-window-chip {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  background: rgba(217, 119, 6, 0.2);
+  color: #fbbf24;
+  padding: 2px 6px;
+  border-radius: 4px;
+  font-size: 10px;
+  font-weight: 700;
+}
+
+.verdict-text {
+  font-size: 13px;
+  font-weight: 700;
+  color: #f8fafc;
+  line-height: 1.4;
+}
+
+.gemma-explanation-box {
+  background: linear-gradient(145deg, #1e1b4b 0%, #0f172a 100%);
+  border: 1px solid rgba(139, 92, 246, 0.3);
+  border-radius: 8px;
+  padding: 12px 14px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.gemma-ai-meta {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  border-bottom: 1px solid rgba(139, 92, 246, 0.15);
+  padding-bottom: 6px;
+}
+
+.gemma-tag {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 10px;
+  font-weight: 700;
+  color: #c4b5fd;
+  letter-spacing: 0.5px;
+}
+
+.gemma-status-pill {
+  font-size: 9px;
+  color: #38bdf8;
+  background: rgba(255, 255, 255, 0.06);
+  padding: 2px 6px;
+  border-radius: 3px;
+}
+
+.gemma-body-narrative {
+  font-size: 12px;
+  line-height: 1.55;
+  color: #e2e8f0;
+}
+
+.vehicle-advisory-box {
+  background: rgba(30, 41, 59, 0.5);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 8px;
+  padding: 10px 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+}
+
+.advisory-label {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 10px;
+  font-weight: 700;
+  color: #fbbf24;
+  letter-spacing: 0.5px;
+}
+
+.advisory-text {
+  font-size: 11px;
+  color: #cbd5e1;
+  line-height: 1.45;
+}
+
+/* Right Side Map Viewport */
+.public-map-viewport {
+  flex: 1;
+  position: relative;
+  background: #020617;
+}
+
+/* Map Vector Legend */
+.public-map-legend {
+  position: absolute;
+  top: 16px;
+  right: 16px;
+  z-index: 1000;
+  background: rgba(15, 23, 42, 0.92);
+  backdrop-filter: blur(8px);
+  border: 1px solid rgba(255, 255, 255, 0.15);
+  border-radius: 8px;
+  padding: 10px 14px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.4);
+}
+
+.legend-head {
+  font-size: 9px;
+  font-weight: 700;
+  color: #94a3b8;
+  letter-spacing: 0.5px;
+  margin-bottom: 2px;
+}
+
+.legend-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 11px;
+  color: #e2e8f0;
+}
+
+.legend-chip {
+  width: 12px;
+  height: 12px;
+  border-radius: 3px;
+}
+
+.legend-chip.red {
+  background: #e11d48;
+  border: 1px solid rgba(255, 255, 255, 0.4);
+}
+
+.legend-chip.yellow {
+  background: #ea580c;
+  border: 1px solid rgba(255, 255, 255, 0.4);
+}
+
+.legend-chip.line {
+  width: 16px;
+  height: 4px;
+  background: #0284c7;
+  border-radius: 2px;
+}

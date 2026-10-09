@@ -12,25 +12,28 @@ CENTER_LAT = 12.835
 CENTER_LON = 74.845
 
 _cache: Dict[str, Any] = {}
-_cache_ts: float = 0.0
 CACHE_TTL = 600.0  # 10 minutes cache TTL
 
 
-def fetch_live_weather() -> Dict[str, Any]:
-    """Fetches real-time weather & marine features for Mangaluru/Ullal region."""
-    global _cache, _cache_ts
+def fetch_live_weather(lat: float = CENTER_LAT, lon: float = CENTER_LON) -> Dict[str, Any]:
+    """Fetches real-time weather & marine features for given latitude and longitude."""
+    global _cache
     now_ts = time.time()
+    cache_key = f"{round(lat, 3)}_{round(lon, 3)}"
 
-    if now_ts - _cache_ts < CACHE_TTL and _cache:
-        return _cache
+    if cache_key in _cache and (now_ts - _cache[cache_key]["_ts"] < CACHE_TTL):
+        return _cache[cache_key]["data"]
+
+    target_lat = lat
+    target_lon = lon
 
     try:
         # 1. Hourly Precipitation & Wind Speed
         w = requests.get(
             "https://api.open-meteo.com/v1/forecast",
             params={
-                "latitude": CENTER_LAT,
-                "longitude": CENTER_LON,
+                "latitude": target_lat,
+                "longitude": target_lon,
                 "hourly": ["rain", "wind_speed_10m"],
                 "past_hours": 6,
                 "forecast_days": 1,
@@ -68,8 +71,8 @@ def fetch_live_weather() -> Dict[str, Any]:
         m = requests.get(
             "https://marine-api.open-meteo.com/v1/marine",
             params={
-                "latitude": CENTER_LAT,
-                "longitude": CENTER_LON,
+                "latitude": target_lat,
+                "longitude": target_lon,
                 "hourly": ["wave_height"],
                 "past_hours": 2,
                 "forecast_days": 1,
@@ -99,6 +102,5 @@ def fetch_live_weather() -> Dict[str, Any]:
         "source": "Open-Meteo Live API + Semi-Diurnal Tide Model"
     }
 
-    _cache = result
-    _cache_ts = now_ts
+    _cache[cache_key] = {"data": result, "_ts": now_ts}
     return result
